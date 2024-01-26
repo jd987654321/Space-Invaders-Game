@@ -1,0 +1,620 @@
+import java.awt.*;
+import java.awt.event.*;
+import javax.swing.*;
+import java.util.ArrayList;
+import java.awt.image.BufferedImage;
+import java.io.*;
+import javax.imageio.*;
+import javax.sound.sampled.Clip;
+import javax.sound.sampled.AudioSystem;
+
+
+//game logic included in GamePanel
+class GamePanel extends JPanel implements KeyListener, ActionListener, MouseListener{
+  private boolean [] keys;
+  private final int x = 500;
+  private int score;
+  private int up = 1, down = 0;
+  private int enemyDir = 1;
+  private int GAME_STATE = 0;
+  private int MENU_SCREEN = 0, GAME_SCREEN = 1, LOST_SCREEN = 2, VICTORY_SCREEN = 3, NEXTLEVEL_SCREEN = 4, LEVELSELECT_SCREEN = 5, PAUSE_SCREEN = 6, SHIP_HIT = 7;
+  Timer timer;
+  
+  //values for difficulty settings
+  private String[] levels = {"Easy", "Medium", "Hard"};
+  private int difficulty = 0;  //easy is the default difficulty
+  private int easy = 0, medium = 1, hard = 2;  
+  private int[] enemyBulletVal = {15, 17, 20};  //Enemy Bullets Speed up
+  private int[] enemySpeedVal = {30, 35, 50};   //Enemy speeds up
+  private int[] playerBulletVal = {15, 13, 11}; //Player Bullets slow down
+  
+  //usable sounds
+  SoundEffect mongrelDeath;
+  SoundEffect playerShootSound;
+  SoundEffect playerDeathSound;
+  SoundEffect youLose;
+  
+  //array lists of objects
+  private ArrayList<Mongrel> Mongrels;
+  private ArrayList<Mongrel> ExplodedFellows;
+  private ArrayList<Bullet> Bullets;
+  private ArrayList<Bullet> EnemyBullets;
+  
+  private ArrayList<Shield> Shields;
+  
+  SpaceShip mainShip = new SpaceShip();
+  
+  private SpaceBackground spaceBackground;
+  
+  //fonts
+  Font fontSans = new Font("Comic Sans MS", Font.PLAIN, 32);
+  int fontTNRsize = 47;
+  
+  Font fontText = null;
+  Font fontTNR = null;       
+  Font fontTitle = null;     
+  
+  //time
+  delayTimer canshoot = new delayTimer();
+  delayTimer bulletMove = new delayTimer();
+  delayTimer enemyTimer = new delayTimer();
+  delayTimer enemyBulletTimer = new delayTimer();
+  
+
+    //creating all the buttons to use
+  Button startButton = new Button(220,500, 165,45, "START");
+  Button playAgainButton = new Button(435, 500, 355, 45, "Play Again?");
+  Button nextLevel = new Button(275, 500, 740, 45, "Continue to next stage?");
+  Button toMenu = new Button(390, 600, 451, 45, "Return to Menu");
+  Button pauseToMenu = new Button(390, 430, 451, 45, "Return to Menu");
+  Button levelSelect = new Button(220, 620, 197, 45, "Levels");
+  Button lvlEasy = new Button(150,250, 131, 45, "Easy");
+  Button lvlMedium = new Button(210,390, 195, 45,"Medium");
+  Button lvlHard = new Button(310,515, 131, 45,"Hard");
+  Button lvlselToMenu = new Button(380,635, 131, 45, "Menu");
+  
+  
+  //randint
+  static int randint(int low, int high){
+    return(int)(Math.random() * (high-low+1)+low);
+  }
+  
+  
+  public GamePanel(){
+    
+    //enemies and bullets kept in ArrayLists
+    Mongrels = new ArrayList<Mongrel>();
+    for(int f = 0; f < (6 + difficulty); f++){
+      Mongrels.add(new Mongrel(85 + f*100, 50, 3, 3, enemySpeedVal[difficulty]));
+      Mongrels.add(new Mongrel(85 + f*100, 150, 2, 2, enemySpeedVal[difficulty]));
+      Mongrels.add(new Mongrel(85 + f*100, 250, 1, 1, enemySpeedVal[difficulty]));
+    }
+    ExplodedFellows = new ArrayList<Mongrel>();
+    
+    
+    Bullets = new ArrayList<Bullet>();
+    EnemyBullets = new ArrayList<Bullet>();
+    
+    Shields = new ArrayList<Shield>();
+    for(int r = 60; r < 1180; r+=300){
+      Shields.add(new Shield(r, 455));
+    }
+    
+    spaceBackground = new SpaceBackground(0,0,1200,900);
+    
+    keys = new boolean[KeyEvent.KEY_LAST+1];
+   
+    InputStream is = GamePanel.class.getResourceAsStream("PressStart2P-Regular.ttf");
+    InputStream iss = GamePanel.class.getResourceAsStream("PressStart2P-Regular.ttf");
+    InputStream isss = GamePanel.class.getResourceAsStream("PressStart2P-Regular.ttf");
+    
+    try{
+      fontText = Font.createFont(Font.PLAIN,isss).deriveFont(20f);
+      fontTNR = Font.createFont(Font.PLAIN, is).deriveFont(32f);
+      fontTitle = Font.createFont(Font.PLAIN, iss).deriveFont(60f);
+      
+    }
+     catch(IOException ex){
+      System.out.println(ex); 
+     }
+     catch(FontFormatException ex){
+      System.out.println(ex); 
+     }
+ 
+    mongrelDeath = new SoundEffect("invaderkilled.wav");
+    playerShootSound = new SoundEffect("shoot.wav");
+    playerDeathSound = new SoundEffect("explosion.wav");
+    youLose = new SoundEffect("NeverGonnaGiveYouUp.wav");
+    
+    //typical window settings stuff
+    setPreferredSize(new Dimension(1200,900));
+    timer = new Timer(10,this);
+    timer.start();
+    setFocusable(true);
+    requestFocus();
+    addKeyListener(this);
+    addMouseListener(this);
+  }
+  
+  //resets the entire game
+  public void reset(){
+    //clears all the arrays, resets the important game variables
+    Mongrels.clear();
+    for(int f = 0; f < (6 + difficulty); f++){
+      Mongrels.add(new Mongrel(85 + f*100, 50, 3, 3, enemySpeedVal[difficulty]));
+      Mongrels.add(new Mongrel(85 + f*100, 150, 2, 2, enemySpeedVal[difficulty]));
+      Mongrels.add(new Mongrel(85 + f*100, 250, 1, 1, enemySpeedVal[difficulty]));
+    }
+    ExplodedFellows.clear();
+    
+    Bullets.clear();
+    EnemyBullets.clear();
+    movedDown = true;
+    enemyDir = 1;
+    
+    Shields.clear();
+    for(int r = 60; r < 1180; r+=300){
+      Shields.add(new Shield(r, 455));
+    }
+    
+    mainShip.resetLives();
+    youLose.stop();
+    score = 0;
+    
+    //reset would be called if the player has died so this will make life easier
+    repaint();
+  }
+  
+  
+  //decides what happens when key is pressed
+  public void moveShip(){
+    if(GAME_STATE == GAME_SCREEN){
+      if(keys[KeyEvent.VK_SPACE]){
+        if(canshoot.delay(500)){
+          Bullets.add(new Bullet(mainShip.x + 20, mainShip.y - 30, up));
+          playerShootSound.play();
+        }
+      }
+      if(keys[KeyEvent.VK_LEFT]){
+        if(mainShip.x > 10){
+          mainShip.moveLeft();
+        }
+      }
+      if(keys[KeyEvent.VK_RIGHT]){
+        if(mainShip.x < 1150){
+          mainShip.moveRight();
+        }
+      }
+    }
+  }
+  
+  //moves the bullets
+  public void moveBullets(){
+    //local arrays, avoids unecessary interaction
+    ArrayList<Bullet> JunkBullets = new ArrayList<Bullet>() ;
+    ArrayList<Bullet> JunkEnemyBullets = new ArrayList<Bullet>();
+    
+    //moves the bullets at a set time
+    if(bulletMove.delay(50)){
+      for(Bullet bullet: Bullets){
+        bullet.move(playerBulletVal[difficulty]);
+        
+        //checks if the bullet hits enemies
+        if(bullet.outOfBounds()){
+          JunkBullets.add(bullet);
+        }
+        else{
+          for(Shield shield: Shields){
+            if(shield.hitShield(bullet)){
+              JunkBullets.add(bullet);
+            }
+          }
+          for(Mongrel mongrel: Mongrels){
+            if(bullet.hitbox().intersects(mongrel.hitbox())){
+              mongrelDeath.play();
+              score+=mongrel.returnValue();
+              ExplodedFellows.add(mongrel);
+              JunkBullets.add(bullet);
+            }
+          }
+        }
+      }
+      
+      //moves enemy bullets as well + checks for collision
+      for(Bullet enemyBullet: EnemyBullets){
+        enemyBullet.move(enemyBulletVal[difficulty]);
+        if(enemyBullet.outOfBounds()){
+          JunkEnemyBullets.add(enemyBullet);
+        }
+        else{
+          for(Shield shield: Shields){
+            if(shield.hitShield(enemyBullet)){
+              JunkEnemyBullets.add(enemyBullet);
+            }
+          }
+          if(enemyBullet.hitbox().intersects(mainShip.hitbox())){
+            mainShip.loseLife();
+            JunkEnemyBullets.add(enemyBullet);
+            playerDeathSound.play();
+          }
+          
+        }
+      }
+    }
+    
+    Bullets.removeAll(JunkBullets);
+    EnemyBullets.removeAll(JunkEnemyBullets);
+    Mongrels.removeAll(ExplodedFellows);
+  }
+  
+  //shoots a bullet from a randomly selected bullet
+  public void enemyShoot(){
+    if(Mongrels.size() > 0){
+      int rand = randint(0, Mongrels.size() - 1);
+      
+      EnemyBullets.add(new Bullet(Mongrels.get(rand).getx()+ 9, Mongrels.get(rand).gety() + 20, down)); 
+      //System.out.println("Array Size: " + Mongrels.size());
+      //System.out.println("RAND: " + rand);
+    }
+  }
+  
+  
+  
+  
+  
+  //move the enemies
+  boolean movedDown = true;
+  
+  public void moveEnemy(){
+    int right = 1, left = 0;
+    boolean goDown = false;
+    
+    //path, switches direction everytime it reaches the edge 
+    for(Mongrel mongrel: Mongrels){
+      if(mongrel.getx() <= 45){
+        enemyDir = right;
+        if(movedDown == false){
+          goDown = true;
+        }
+        break;
+      }
+      else if(mongrel.getx() >= 1135){
+        enemyDir = left;
+        if(movedDown == false){
+          goDown = true;
+        }
+        break;
+      }
+    }
+    
+    //moves the aliens
+    if(goDown == true && movedDown == false){
+      for(Mongrel mongrel: Mongrels){
+        mongrel.moveDown();
+        if(mongrel.gety() > 450){
+          GAME_STATE = LOST_SCREEN;
+        }
+      }
+      goDown = false;
+      movedDown = true; 
+    }
+    else{
+      //then moves the aliens
+      for(Mongrel mongrel: Mongrels){
+        if(enemyDir == right){
+          mongrel.moveRight();
+        }
+        else if(enemyDir == left){
+          mongrel.moveLeft();
+        }
+      }
+      movedDown = false;
+    }
+  }
+  
+  
+  
+  
+  
+  
+  
+  //runs constantly
+  @Override
+  public void actionPerformed(ActionEvent e){
+    spaceBackground.moveAll();
+    
+    if(GAME_STATE == GAME_SCREEN){
+      moveBullets();
+      moveShip();
+    
+      if(enemyTimer.delay(500)){
+        moveEnemy();
+      }
+    
+      if(enemyBulletTimer.delay(randint(1000,6000))){
+        enemyShoot();
+      }
+    
+      if(mainShip.shipAlive() == false){
+        System.out.println("Ship is dead");
+        GAME_STATE = LOST_SCREEN;
+        youLose.play();
+        
+      }
+    }
+    
+    if(score == ((((6+difficulty)*1) + ((6+difficulty)*2) + ((6+difficulty)*3)))){
+      if(difficulty != hard){
+        GAME_STATE = NEXTLEVEL_SCREEN;
+      }
+      else if(difficulty == hard){
+        GAME_STATE = VICTORY_SCREEN;
+      }
+    }
+    repaint();
+  }
+  
+  @Override
+  public void mouseClicked(MouseEvent e){}
+  @Override
+  public void mouseEntered(MouseEvent e){}
+  @Override
+  public void mouseExited(MouseEvent e){}
+  @Override
+  public void mouseReleased(MouseEvent e){}
+
+  
+  
+  // All the functionality of the buttons rests here
+  // Too many button interactions, but basically depending 
+  // on the GAME_STATE variable, each if allows the user 
+  // to interact with certain buttons.
+  @Override
+  public void mousePressed(MouseEvent e){
+    int mousex = e.getX();
+    int mousey = e.getY();
+    Rectangle mouseBox = new Rectangle(mousex - 1, mousey - 1, 2, 2);
+    
+    if(GAME_STATE == MENU_SCREEN){
+      if(startButton.clickBox().intersects(mouseBox)){
+        GAME_STATE = GAME_SCREEN;
+      }
+      if(levelSelect.clickBox().intersects(mouseBox)){
+        GAME_STATE = LEVELSELECT_SCREEN;
+      }
+    }
+    
+    if(GAME_STATE == PAUSE_SCREEN){
+      if(pauseToMenu.clickBox().intersects(mouseBox)){
+        difficulty = easy;
+        reset();
+        GAME_STATE = MENU_SCREEN;
+      }
+    }
+    
+    if(GAME_STATE == LEVELSELECT_SCREEN){
+      if(lvlEasy.clickBox().intersects(mouseBox)){
+        difficulty = easy;
+        reset();
+        GAME_STATE = GAME_SCREEN;
+      }
+      if(lvlMedium.clickBox().intersects(mouseBox)){
+        difficulty = medium;
+        reset();
+        GAME_STATE = GAME_SCREEN;
+      }
+      if(lvlHard.clickBox().intersects(mouseBox)){
+        difficulty = hard;
+        reset();
+        GAME_STATE = GAME_SCREEN;
+      }
+      if(lvlselToMenu.clickBox().intersects(mouseBox)){
+        GAME_STATE = MENU_SCREEN;
+      }
+    }
+    
+    else if(GAME_STATE == LOST_SCREEN || GAME_STATE == VICTORY_SCREEN){
+      difficulty = easy;
+      reset();
+      if(toMenu.clickBox().intersects(mouseBox)){
+        GAME_STATE = MENU_SCREEN;
+      }
+      if(playAgainButton.clickBox().intersects(mouseBox)){
+        GAME_STATE = GAME_SCREEN;
+      }
+    }
+    
+    else if(GAME_STATE == NEXTLEVEL_SCREEN){
+      if(nextLevel.clickBox().intersects(mouseBox)){
+        difficulty++;
+        reset();
+        GAME_STATE = GAME_SCREEN;
+      }
+      if(toMenu.clickBox().intersects(mouseBox)){
+        difficulty = easy;
+        reset();
+        GAME_STATE = MENU_SCREEN;
+      }
+    }
+  }
+  
+  
+  @Override
+  public void keyPressed(KeyEvent ke){
+    int key = ke.getKeyCode();
+    keys[key] = true;
+  }
+  
+  @Override
+  public void keyReleased(KeyEvent ke){
+    int key = ke.getKeyCode();
+    keys[key] = false;
+    mainShip.notMoving();
+  }
+  
+  @Override
+  public void keyTyped(KeyEvent ke){
+
+    //pressing esc key to pause the game
+    if(GAME_STATE == GAME_SCREEN || GAME_STATE == PAUSE_SCREEN){
+      if(keys[KeyEvent.VK_ESCAPE]){
+        System.out.println("clicked");
+        if(GAME_STATE == GAME_SCREEN){
+          GAME_STATE = PAUSE_SCREEN;
+        }
+        else if(GAME_STATE == PAUSE_SCREEN){
+          GAME_STATE = GAME_SCREEN;
+        }
+      }
+    }
+  }
+  
+
+  
+  //draws every frame of the game
+  @Override
+  public void paint(Graphics g){
+    if(GAME_STATE == MENU_SCREEN){
+      spaceBackground.draw(g);
+      g.setColor(new Color(120,0,120));
+      g.fillRect(100,100,getWidth()-200,getHeight()-200);
+      g.setColor(new Color(255,255,255));
+      g.setFont(fontTitle);
+      g.setColor(new Color(0,0,0));
+      for(int fr = 0; fr < 7; fr++){
+        g.drawString(" Space Invaders ", 123+fr, 303+fr);
+      }
+      g.setColor(new Color(255,255,255));
+      g.drawString(" Space Invaders ", 130, 300);
+      
+      g.setColor(new Color(10,10,10));
+      for(int tu = 0; tu < 12; tu++){
+        g.fillRect(578+tu,378+tu,415,350);
+      }
+      g.setColor(new Color(180,0,180));
+      g.fillRect(590,390,415,350);
+      
+            
+      //drawing the message
+      g.setColor(new Color(255,255,255));
+      g.setFont(fontText);
+      g.drawString("Arrow Keys to move!", 610, 445);
+      g.drawString("Space to shoot!", 610, 485);
+      g.drawString("Click Start to play", 610, 560);
+      g.drawString("Click Levels for", 610, 635);
+      g.drawString("a Tip!", 610, 675);
+      
+      startButton.draw(g);
+      levelSelect.draw(g);
+    }
+    
+    if(GAME_STATE == LEVELSELECT_SCREEN){
+     
+      g.setColor(new Color(0,0,0));
+      g.fillRect(0,0,getWidth(), getHeight());
+      
+      g.setColor(new Color(120,0,120, 200));
+      g.fillRect(600,100,500,610);
+      g.setFont(fontText);
+      g.setColor(new Color(255,255,255));
+      g.drawString("These Aliens can", 660,175);
+      g.drawString("Teleport! Aim at", 660, 225);
+      g.drawString("where they will be", 660, 275);
+      g.drawString("to hit them. These", 660, 325);
+      g.drawString("pesky fellows might", 660, 375);
+      g.drawString("even dodge bullets.", 660, 425);
+      g.drawString("Protect the barriers!", 660, 495);
+      g.drawString("-The Dev", 850, 620);
+      
+      
+      g.setColor(new Color(120,0,120));
+      int[] xints = {-90,410,765,265};
+      int[] yints = {132,132,742,742};
+      
+      g.fillPolygon(xints, yints, 4);
+      
+      lvlEasy.draw(g);
+      lvlMedium.draw(g);
+      lvlHard.draw(g);
+      lvlselToMenu.draw(g);
+    }
+    
+    if(GAME_STATE == GAME_SCREEN || GAME_STATE == PAUSE_SCREEN){
+     
+      g.setColor(new Color(0,0,0));
+      g.fillRect(0,0,getWidth(),getHeight());
+      mainShip.draw(g);
+    
+      //loops draw everything in array
+      for(Mongrel mongrel: Mongrels){
+        mongrel.draw(g);
+      }
+    
+      for(Bullet bullet: Bullets){
+        bullet.draw(g);
+      }
+    
+      for(Bullet enemyBullet: EnemyBullets){
+        enemyBullet.draw(g);
+      }
+      
+      for(Shield shield: Shields){
+        shield.draw(g);
+      }
+      
+      g.setColor(new Color(50,50,50));
+      g.fillRect(0,800, getWidth(),100);
+    
+      g.setColor(new Color(255,255,255));
+      g.setFont(fontTNR);
+      g.drawString("Score:" + score, 30,860);
+      g.drawString("Lives:" + mainShip.returnLives(), 440,860);
+      g.drawString("Level:" + levels[difficulty], 800,860);
+      
+      if(GAME_STATE == PAUSE_SCREEN){
+        g.setColor(new Color(255,255,255,125));
+        g.fillRect(0,0, getWidth(), getHeight());
+        pauseToMenu.draw(g);
+      }
+    }
+    
+    
+    if(GAME_STATE == LOST_SCREEN){
+      g.setColor(new Color(0,0,0));
+      g.fillRect(0,0,getWidth(),getHeight());
+      
+      g.setFont(fontTNR);
+      g.setColor(new Color(255,0,0));
+      //dark souls reference
+      g.drawString("YOU DIED", 465, 380);
+      playAgainButton.draw(g);
+      toMenu.draw(g);
+      
+    }
+    
+    if(GAME_STATE == VICTORY_SCREEN || GAME_STATE == NEXTLEVEL_SCREEN){
+      g.setColor(new Color(0,0,0));
+      g.fillRect(0,0,getWidth(), getHeight());
+      
+      g.setFont(fontTNR);
+      g.setColor(new Color(25,255,25));
+      
+      if(GAME_STATE == VICTORY_SCREEN){
+        g.drawString("YOU BEAT THE GAME!", 315, 400);
+        playAgainButton.draw(g);
+      }
+      if(GAME_STATE == NEXTLEVEL_SCREEN){
+        g.drawString("YOU WON!", 475, 400);
+        nextLevel.draw(g);
+      }
+      
+      toMenu.draw(g);
+    }
+    
+    g.setColor(new Color(120, 0, 120));
+    for(int gh = 0; gh < 10; gh++){
+      g.drawRect(0+gh,0+gh,1200-(2*gh),900-(2*gh));
+    }
+  }
+}
+  
